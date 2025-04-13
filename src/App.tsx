@@ -1,24 +1,47 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-// import { CustomSelect, CustomSelectOption } from '@/components/ui/custom-select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { Copy, Download, Upload, Key, Wand2 } from 'lucide-react';
+import { Download, Key, Wand2, AlertCircle } from 'lucide-react';
 import { languageMap } from './lib/languages';
 import { ThemeProvider } from './components/theme-provider';
 import { ModeToggle } from './components/mode-toggle';
 import Github from './components/github-svg';
+import { CopyButton } from './components/copy-button';
+import OpenAI from 'openai';
+import { type Caption, serializeSrt } from '@remotion/captions';
+import { normalizeSegments, normalizeWords, parseGroqErrorMessage } from './lib/utils';
 
 interface TranscriptionOutput {
   text: string;
   json: string;
   srt: string;
 }
+
+// https://console.groq.com/docs/speech-to-text#supported-models
+const models = [
+  {
+    id: 'whisper-large-v3',
+    name: 'Whisper large-v3',
+    description: 'Provides state-of-the-art performance with high accuracy for multilingual transcription and translation tasks.',
+  },
+  {
+    id: 'whisper-large-v3-turbo',
+    name: 'Whisper Large V3 Turbo',
+    description: 'A fine-tuned version of a pruned Whisper Large V3 designed for fast, multilingual transcription tasks.',
+  },
+  {
+    id: 'distil-whisper-large-v3-en',
+    name: 'Distil-Whisper English',
+    description: "A distilled, or compressed, version of OpenAI's Whisper model, designed to provide faster, lower cost English speech recognition while maintaining comparable accuracy.",
+  },
+];
 
 function App() {
   const [apiKey, setApiKey] = useState(() => {
@@ -31,22 +54,16 @@ function App() {
     }
   });
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [model, setModel] = useState('whisper-large-v3');
+  const [model, setModel] = useState(models[0].id);
   const [language, setLanguage] = useState('auto');
   const [wordTimestamps, setWordTimestamps] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [output, setOutput] = useState<TranscriptionOutput>({
     text: '',
     json: '',
     srt: '',
   });
-
-  // useEffect(() => {
-  //   const savedApiKey = localStorage.getItem('groqApiKey');
-  //   if (savedApiKey) {
-  //     setApiKey(savedApiKey);
-  //   }
-  // }, []);
 
   const handleApiKeyBlur = (value: string) => {
     localStorage.setItem('groqApiKey', value);
@@ -61,70 +78,65 @@ function App() {
 
   const handleTranscribe = async () => {
     if (!audioFile || !apiKey) {
-      alert('Please select an audio file and provide an API key');
+      setErrorMessage('Please select an audio file and provide an API key');
       return;
     }
 
     setIsTranscribing(true);
+    setErrorMessage(null);
+    setOutput({
+      text: '',
+      json: '',
+      srt: '',
+    });
 
     try {
-      // Simulated transcription response
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      const sampleText = 'This is a sample transcription.';
-      const sampleJson = JSON.stringify(
-        {
-          text: sampleText,
-          segments: [
-            {
-              start: 0,
-              end: 2.5,
-              text: 'This is',
-            },
-            {
-              start: 2.5,
-              end: 4.0,
-              text: 'a sample transcription.',
-            },
-          ],
-        },
-        null,
-        2,
-      );
-
-      const sampleSrt = `1
-00:00:00,000 --> 00:00:02,500
-This is
-
-2
-00:00:02,500 --> 00:00:04,000
-a sample transcription.`;
-
-      setOutput({
-        text: sampleText,
-        json: sampleJson,
-        srt: sampleSrt,
+      const client = new OpenAI({
+        apiKey,
+        baseURL: 'https://api.groq.com/openai/v1',
+        dangerouslyAllowBrowser: true,
       });
+
+      const transcription = await client.audio.transcriptions.create({
+        file: audioFile,
+        model,
+        response_format: 'verbose_json',
+        timestamp_granularities: [wordTimestamps ? 'word' : 'segment'],
+        ...(language === 'auto' ? {} : { language }),
+        temperature: 0,
+      });
+
+      const text = transcription.text.trim();
+
+      if (!transcription.segments && !transcription.words) throw new Error('No segments or words found in transcription.');
+
+      const json = JSON.stringify(transcription.segments ?? transcription.words, null, 2);
+
+      const segments = normalizeSegments(transcription.segments) ?? normalizeWords(transcription.words)!;
+      const lines: Caption[][] = segments.map((segment) => [segment as Caption]);
+      const srt = serializeSrt({ lines });
+
+      setOutput({ text, json, srt });
     } catch (error) {
       console.error('Transcription error:', error);
-      alert('Failed to transcribe audio');
+      // if (error instanceof OpenAI.APIError) {
+      //   setErrorMessage(error.message);
+      // } else {
+      setErrorMessage(error instanceof Error ? error.message : `Transcription error: ${error}`);
+      // }
+      // setError('Failed to transcribe audio');
     } finally {
       setIsTranscribing(false);
     }
   };
 
-  const handleDownload = (format: string) => {
-    const content = 'Sample transcription content';
+  const handleDownload = (content: string, ext: string) => {
     const blob = new Blob([content], { type: 'text/plain' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `transcription.${format}`;
+    a.download = `transcription.${ext}`;
     a.click();
-  };
-
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
   };
 
   return (
@@ -135,7 +147,7 @@ a sample transcription.`;
           <header className='border-border mb-4 flex items-center justify-between border-b pb-4'>
             <h1 className='flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-2xl font-bold text-transparent'>Groq Whisper</h1>
             <div className='flex items-center space-x-4'>
-              <a href='https://github.com/T1ckbase/fast-translate' target='_blank' rel='noopener noreferrer'>
+              <a href='https://github.com/T1ckbase/groq-whisper' target='_blank' rel='noopener noreferrer'>
                 <Github className='h-5 w-5' />
               </a>
               <div className='ml-auto'>
@@ -144,7 +156,7 @@ a sample transcription.`;
             </div>
           </header>
 
-          <div className='grid grid-cols-1 gap-6 lg:grid-cols-2'>
+          <div className='grid grid-cols-1 gap-4 lg:grid-cols-2'>
             {/* Left Column - Transcription Output */}
             <div className='space-y-4'>
               <Card className='bg-card/50 border-muted p-4 backdrop-blur'>
@@ -164,15 +176,14 @@ a sample transcription.`;
                   {(['text', 'json', 'srt'] as const).map((format) => (
                     <TabsContent key={format} value={format} className='space-y-4'>
                       <div className='relative'>
-                        <Textarea value={output[format]} className='bg-muted/50 min-h-[500px] font-mono text-sm' placeholder={`Transcription will appear here in ${format.toUpperCase()} format`} readOnly />
-                        <div className='absolute top-2 right-2 space-x-2'>
-                          <Button variant='secondary' size='icon' onClick={() => handleCopy('')} disabled={!output[format]}>
-                            <Copy className='h-4 w-4' />
-                          </Button>
-                          <Button variant='secondary' size='icon' onClick={() => handleDownload(format)} disabled={!output[format]}>
+                        {/* <div className='absolute top-2 right-2 space-x-2'> */}
+                        <div className='flex justify-end space-x-2 pb-2'>
+                          <CopyButton value={output[format]} variant='secondary' size='icon' className='shrink-0' disabled={!output[format]} />
+                          <Button variant='secondary' size='icon' onClick={() => handleDownload(output[format], format === 'text' ? 'txt' : format)} disabled={!output[format]}>
                             <Download className='h-4 w-4' />
                           </Button>
                         </div>
+                        <Textarea value={output[format]} className='bg-muted/50 min-h-[500px] font-mono text-sm' placeholder={`Transcription will appear here in ${format.toUpperCase()} format`} readOnly />
                       </div>
                     </TabsContent>
                   ))}
@@ -182,29 +193,34 @@ a sample transcription.`;
 
             {/* Right Column - Configuration */}
             <div className='space-y-4'>
-              <Card className='bg-card/50 border-muted p-6 backdrop-blur'>
+              <Card className='bg-card/50 border-muted p-4 backdrop-blur'>
                 <h2 className='text-xl font-bold'>Configuration</h2>
 
-                <div className='space-y-6'>
+                <div className='space-y-5'>
                   {/* API Key Input */}
                   <div className='space-y-2'>
                     <Label>GROQ API Key</Label>
                     <div className='relative'>
-                      <Input type='password' value={apiKey} onChange={(e) => setApiKey(e.target.value)} onBlur={(e) => handleApiKeyBlur(e.target.value)} className='bg-muted/50 pl-9' placeholder='Enter your GROQ API key' />
+                      <Input type='password' required value={apiKey} onChange={(e) => setApiKey(e.target.value)} onBlur={(e) => handleApiKeyBlur(e.target.value)} className='bg-muted/50 pl-9' placeholder='Enter your GROQ API key' />
                       <Key className='text-muted-foreground absolute top-2.5 left-3 h-4 w-4' />
                     </div>
+                    <span className='text-sm opacity-40'>
+                      Get your key from{' '}
+                      <a href='https://console.groq.com/keys' target='_blank' rel='noopener noreferrer' className='underline'>
+                        https://console.groq.com/keys
+                      </a>
+                    </span>
                   </div>
 
                   <div className='space-y-2'>
-                    <Label>
-                      Audio File <span className='opacity-40'>flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm supported</span>
-                    </Label>
+                    <Label>Audio File</Label>
                     <div className='flex items-center gap-4'>
                       <Input type='file' accept='.flac,.mp3,.mp4,.mpeg,.mpga,.m4a,.ogg,.wav,.webm' className='bg-muted/50' onChange={handleFileChange} />
                       {/* <Button variant='secondary' size='icon'>
                         <Upload className='h-4 w-4' />
                       </Button> */}
                     </div>
+                    <span className='text-sm opacity-40'>40 MB (free tier), 100MB (dev tier). flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm supported</span>
                   </div>
 
                   <div className='space-y-2'>
@@ -214,9 +230,11 @@ a sample transcription.`;
                         <SelectValue placeholder='Select model' />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value='whisper-large-v3'>Whisper large-v3</SelectItem>
-                        <SelectItem value='whisper-large-v3-turbo'>Whisper Large V3 Turbo</SelectItem>
-                        <SelectItem value='distil-whisper-large-v3-en'>Distil-Whisper English</SelectItem>
+                        {models.map(({ name, id }) => (
+                          <SelectItem key={id} value={id}>
+                            {name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -228,9 +246,11 @@ a sample transcription.`;
                         <SelectValue placeholder='Select language' />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value='auto'>Auto detect</SelectItem>
+                        <SelectItem value='auto'>auto detect</SelectItem>
                         {Object.entries(languageMap).map(([k, v]) => (
-                          <SelectItem value={v}>{k}</SelectItem>
+                          <SelectItem key={v} value={v}>
+                            {k}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -238,7 +258,7 @@ a sample transcription.`;
 
                   <div className='flex items-center justify-between'>
                     <Label htmlFor='word-level-timestamps'>Word-level timestamps</Label>
-                    <Switch checked={wordTimestamps} onCheckedChange={setWordTimestamps} />
+                    <Switch checked={wordTimestamps} onCheckedChange={setWordTimestamps} id='word-level-timestamps' />
                   </div>
 
                   <Button className='w-full' onClick={handleTranscribe} disabled={!audioFile || !apiKey || isTranscribing}>
@@ -254,6 +274,14 @@ a sample transcription.`;
                       </div>
                     )}
                   </Button>
+
+                  {errorMessage && (
+                    <Alert variant='destructive'>
+                      <AlertCircle className='h-4 w-4' />
+                      <AlertTitle>Error</AlertTitle>
+                      <AlertDescription>{errorMessage}</AlertDescription>
+                    </Alert>
+                  )}
                 </div>
               </Card>
             </div>
