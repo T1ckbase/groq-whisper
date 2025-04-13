@@ -1,5 +1,6 @@
 {
   "name": "groq-whisper",
+  "homepage": "https://t1ckbase.github.io/groq-whisper",
   "private": true,
   "version": "0.0.0",
   "type": "module",
