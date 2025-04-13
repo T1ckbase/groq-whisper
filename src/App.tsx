@@ -16,7 +16,7 @@ import Github from './components/github-svg';
 import { CopyButton } from './components/copy-button';
 import OpenAI from 'openai';
 import { type Caption, serializeSrt } from '@remotion/captions';
-import { normalizeSegments, normalizeWords, parseGroqErrorMessage } from './lib/utils';
+import { normalizeSegments, normalizeWords } from './lib/utils';
 
 interface TranscriptionOutput {
   text: string;
@@ -141,8 +141,8 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme='system' storageKey='theme'>
-      <div className='bg-background text-foreground min-h-screen p-4 font-mono'>
-        <div className='mx-auto max-w-7xl'>
+      <div className='bg-background text-foreground flex h-svh max-h-svh w-full flex-col p-4 font-mono'>
+        <div className='mx-auto flex h-full w-full max-w-[90rem] flex-col'>
           {/* <h1 className='mb-8 bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-3xl font-bold text-transparent'>Groq Whisper</h1> */}
           <header className='border-border mb-4 flex items-center justify-between border-b pb-4'>
             <h1 className='flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-2xl font-bold text-transparent'>Groq Whisper</h1>
@@ -156,11 +156,11 @@ function App() {
             </div>
           </header>
 
-          <div className='grid grid-cols-1 gap-4 lg:grid-cols-2'>
+          <div className='grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]'>
             {/* Left Column - Transcription Output */}
-            <div className='space-y-4'>
-              <Card className='bg-card/50 border-muted p-4 backdrop-blur'>
-                <Tabs defaultValue='text' className='w-full'>
+            <div className='flex h-full flex-col space-y-4'>
+              <Card className='bg-card/50 border-muted flex flex-1 flex-col p-4 backdrop-blur'>
+                <Tabs defaultValue='text' className='flex w-full flex-1 flex-col'>
                   <TabsList className='w-full'>
                     <TabsTrigger value='text' className='flex-1'>
                       Text
@@ -174,8 +174,8 @@ function App() {
                   </TabsList>
 
                   {(['text', 'json', 'srt'] as const).map((format) => (
-                    <TabsContent key={format} value={format} className='space-y-4'>
-                      <div className='relative'>
+                    <TabsContent key={format} value={format} className='flex flex-1 flex-col space-y-4'>
+                      <div className='relative flex min-h-0 flex-1 flex-col'>
                         {/* <div className='absolute top-2 right-2 space-x-2'> */}
                         <div className='flex justify-end space-x-2 pb-2'>
                           <CopyButton value={output[format]} variant='secondary' size='icon' className='shrink-0' disabled={!output[format]} />
@@ -183,7 +183,7 @@ function App() {
                             <Download className='h-4 w-4' />
                           </Button>
                         </div>
-                        <Textarea value={output[format]} className='bg-muted/50 min-h-[500px] font-mono text-sm' placeholder={`Transcription will appear here in ${format.toUpperCase()} format`} readOnly />
+                        <Textarea value={output[format]} className='bg-muted/50 h-full resize-none overflow-auto font-mono text-sm' placeholder={`Transcription will appear here in ${format.toUpperCase()} format`} readOnly />
                       </div>
                     </TabsContent>
                   ))}
