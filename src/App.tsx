@@ -71,9 +71,10 @@ function App() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setAudioFile(file);
-    }
+    if (!file) return;
+    // console.log('file size:', file.size);
+    setAudioFile(file);
+    setErrorMessage(file.size > 100 * 1024 * 1024 ? `File too large (${Math.round(file.size / 1024 / 1024)} MB)` : null);
   };
 
   const handleTranscribe = async () => {
@@ -220,7 +221,9 @@ function App() {
                         <Upload className='h-4 w-4' />
                       </Button> */}
                     </div>
-                    <span className='text-sm opacity-40'>40 MB (free tier), 100MB (dev tier). flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm supported</span>
+                    <span className='text-sm opacity-40'>
+                      <span className={audioFile && audioFile.size > 40 * 1024 * 1024 ? 'text-yellow-500' : ''}>40 MB (free tier)</span>, 100 MB (dev tier). flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm supported
+                    </span>
                   </div>
 
                   <div className='space-y-2'>
@@ -261,7 +264,7 @@ function App() {
                     <Switch checked={wordTimestamps} onCheckedChange={setWordTimestamps} id='word-level-timestamps' />
                   </div>
 
-                  <Button className='w-full' onClick={handleTranscribe} disabled={!audioFile || !apiKey || isTranscribing}>
+                  <Button className='w-full' onClick={handleTranscribe} disabled={!audioFile || audioFile.size > 100 * 1024 * 1024 || !apiKey || isTranscribing}>
                     {isTranscribing ? (
                       <div className='flex items-center gap-2'>
                         <div className='h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent' />
